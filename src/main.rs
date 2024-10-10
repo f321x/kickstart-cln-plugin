@@ -1,3 +1,4 @@
+mod cln_liquidity_plugin;
 mod ecash_wallet;
 
 use anyhow::{anyhow, Result};
@@ -12,6 +13,7 @@ use rand::Rng;
 use std::{env, fs::OpenOptions, io::Write, path::Path, sync::Arc};
 use tokio::io::{stdin as tokio_stdin, stdout as tokio_stdout, AsyncBufReadExt};
 
+// disclaimer: started hacking on this on Thursday (and some research before)
 #[tokio::main]
 async fn main() -> Result<()> {
     // enable logging to stderr (stdout is used for plugin communication)
@@ -26,7 +28,7 @@ async fn main() -> Result<()> {
     let wallet = EcashWallet::new().await?;
 
     // run demo
-    demo(wallet).await?;
+    // _demo(wallet).await?;
 
     // catch created invoice // hook @ lightning-invoice
     // check inbound liquidity // lightning-listchannels RPC
@@ -34,25 +36,10 @@ async fn main() -> Result<()> {
     // check if balance is enough to open channel
 
     // if let Some(plugin) = Builder::new(tokio_stdin(), tokio_stdout())
-    //     .dynamic()
-    //     .option(TEST_OPTION)
-    //     .option(TEST_OPTION_NO_DEFAULT)
-    //     .option(test_dynamic_option)
-    //     .setconfig_callback(setconfig_callback)
-    //     .rpcmethod("testmethod", "This is a test", testmethod)
-    //     .rpcmethod(
-    //         "testoptions",
-    //         "Retrieve options from this plugin",
-    //         testoptions,
-    //     )
-    //     .rpcmethod(
-    //         "test-custom-notification",
-    //         "send a test_custom_notification event",
-    //         test_send_custom_notification,
-    //     )
+    //     // .option(TEST_OPTION)  // used to accept cli input from user to plugin
     //     .subscribe("connect", connect_handler)
     //     .subscribe("test_custom_notification", test_receive_custom_notification)
-    //     .hook("peer_connected", peer_connected_handler)
+    //     .hook("rpc_command", peer_connected_handler)
     //     .notification(messages::NotificationTopic::new(TEST_NOTIF_TAG))
     //     .start(state)
     //     .await?
@@ -65,7 +52,7 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-async fn demo(wallet: EcashWallet) -> Result<()> {
+async fn _demo(wallet: EcashWallet) -> Result<()> {
     let balance = wallet.get_total_balance().await?;
     debug!("Total balance: {}", balance);
     if balance < 3 {
