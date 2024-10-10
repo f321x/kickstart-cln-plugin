@@ -12,7 +12,7 @@ pub struct PaymentRequest {
 
 impl EcashWallet {
     pub async fn new() -> Result<Self> {
-        let seed = gen_or_read_seed()?;
+        let (seed, newly_generated) = gen_or_read_seed()?;
         let mint_url = match env::var("MINT_URL") {
             Ok(url) if url.len() > 1 => url,
             _ => {
@@ -29,6 +29,12 @@ impl EcashWallet {
             &seed,
             None,
         )?;
+        let existing_balance = cdk_wallet.total_balance().await?;
+        if existing_balance == Amount::from(0) && !newly_generated {
+            warn!("Found no balance in database on already existing secret, scanning for existing proofs...");
+            let restored_amount = cdk_wallet.restore().await?;
+            warn!("Restored balance: {}", restored_amount);
+        }
         Ok(Self { cdk_wallet })
     }
 
@@ -69,7 +75,10 @@ impl EcashWallet {
     }
 
     pub async fn create_lightning_invoice(&self, amount_sat: u64) -> Result<PaymentRequest> {
-        let mint_quote = self.cdk_wallet.mint_quote(Amount::from(amount_sat)).await?;
+        let mint_quote = self
+            .cdk_wallet
+            .mint_quote(Amount::from(amount_sat), None)
+            .await?;
         Ok(PaymentRequest {
             bolt11: mint_quote.request.clone(),
             mint_quote_id: mint_quote.id,
@@ -94,13 +103,16 @@ impl EcashWallet {
 
 /// load hex seed from env
 /// or generate a new one and save it in .env file
-fn gen_or_read_seed() -> Result<[u8; 32]> {
+fn gen_or_read_seed() -> Result<([u8; 32], bool)> {
     match env::var("CASHU_SEED") {
         Ok(seed) if seed.len() == 64 => {
             trace!("Found existing seed in env, loading...");
-            Ok(hex::decode(seed)?
-                .try_into()
-                .map_err(|_| anyhow!("Invalid seed in env"))?)
+            Ok((
+                hex::decode(seed)?
+                    .try_into()
+                    .map_err(|_| anyhow!("Invalid seed in env"))?,
+                false,
+            ))
         }
         _ => {
             warn!("No seed found in env, generating and saving new seed...");
@@ -108,33 +120,15 @@ fn gen_or_read_seed() -> Result<[u8; 32]> {
             let seed = rand::thread_rng().gen::<[u8; 32]>();
             // write newly generated seed into .env file (and create file if it doesn't exist)
             write_seed_to_env_file(seed)?;
-            Ok(seed)
+            Ok((seed, true))
         }
     }
-    // let seed = env::var("CASHU_SEED")?;
-    // if seed.len() == 64 {
-    //     trace!("Found existing seed in env, loading...");
-    //     Ok(hex::decode(seed)?
-    //         .try_into()
-    //         .map_err(|_| anyhow!("Invalid seed in env"))?)
-    // } else {
-    //     warn!("No seed found in env, generating and saving new seed...");
-    //     // generate new seed
-    //     let seed = rand::thread_rng().gen::<[u8; 32]>();
-    //     // write newly generated seed into .env file (and create file if it doesn't exist)
-    //     write_seed_to_env_file(seed)?;
-    //     Ok(seed)
-    // }
 }
 
 fn write_seed_to_env_file(seed: [u8; 32]) -> Result<()> {
     info!("Writing new seed to .env file");
     let seed = hex::encode(seed);
-    let mut file = OpenOptions::new()
-        .write(true)
-        .create(true)
-        .append(true)
-        .open(".env")?;
+    let mut file = OpenOptions::new().create(true).append(true).open(".env")?;
     file.write_all(format!("CASHU_SEED={}\n", seed).as_bytes())?;
     Ok(())
 }

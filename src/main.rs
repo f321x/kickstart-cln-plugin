@@ -17,7 +17,7 @@ async fn main() -> Result<()> {
     // enable logging to stderr (stdout is used for plugin communication)
     env_logger::builder()
         .filter_level(log::LevelFilter::Warn)
-        .filter_module("kickstart-cln", log::LevelFilter::Trace)
+        .filter_module("kickstart_cln", log::LevelFilter::Trace)
         .target(Target::Stderr)
         .init();
     // load .env file
@@ -26,7 +26,7 @@ async fn main() -> Result<()> {
     let wallet = EcashWallet::new().await?;
 
     // run demo
-    // demo(wallet).await?;
+    demo(wallet).await?;
 
     // catch created invoice // hook @ lightning-invoice
     // check inbound liquidity // lightning-listchannels RPC
@@ -67,20 +67,20 @@ async fn main() -> Result<()> {
 
 async fn demo(wallet: EcashWallet) -> Result<()> {
     let balance = wallet.get_total_balance().await?;
-    println!("Total balance: {}", balance);
+    debug!("Total balance: {}", balance);
     if balance < 3 {
-        let invoice = wallet.create_lightning_invoice(6 - balance).await?;
-        println!("Invoice: {}", &invoice.bolt11);
+        let invoice = wallet.create_lightning_invoice(6).await?;
+        debug!("Invoice: {}", &invoice.bolt11);
         while !wallet.check_invoice_status(&invoice.mint_quote_id).await? {
             tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
         }
-        println!("Invoice paid");
-        println!("Total balance: {}", wallet.get_total_balance().await?);
+        debug!("Invoice paid");
+        debug!("Total balance: {}", wallet.get_total_balance().await?);
     }
     // read invoice from stdin
     let entered_lightning_invoice = {
         let mut input = String::new();
-        println!("Enter lightning invoice: ");
+        eprintln!("Enter lightning invoice: ");
         let mut stdin = tokio::io::BufReader::new(tokio_stdin());
         stdin.read_line(&mut input).await?;
         input.trim().to_string()
@@ -88,6 +88,6 @@ async fn demo(wallet: EcashWallet) -> Result<()> {
     let payment_preimage = wallet
         .pay_lightning_invoice(entered_lightning_invoice)
         .await?;
-    println!("Payment preimage: {}", payment_preimage);
+    debug!("Payment preimage: {}", payment_preimage);
     Ok(())
 }
