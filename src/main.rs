@@ -10,17 +10,28 @@ use env_logger::Target;
 use log::{debug, error, info, trace, warn};
 use rand::Rng;
 use std::{env, fs::OpenOptions, io::Write, path::Path, sync::Arc};
-use tokio::io::{stdin as tokio_stdin, stdout as tokio_stdout};
+use tokio::io::{stdin as tokio_stdin, stdout as tokio_stdout, AsyncBufReadExt};
 
 #[tokio::main]
 async fn main() -> Result<()> {
     // enable logging to stderr (stdout is used for plugin communication)
     env_logger::builder()
-        .filter_level(log::LevelFilter::Debug)
+        .filter_level(log::LevelFilter::Warn)
+        .filter_module("kickstart-cln", log::LevelFilter::Trace)
         .target(Target::Stderr)
         .init();
     // load .env file
     dotenv().ok();
+    // initialize ecash wallet
+    let wallet = EcashWallet::new().await?;
+
+    // run demo
+    // demo(wallet).await?;
+
+    // catch created invoice // hook
+    // check inbound liquidity // lightning-listchannels RPC
+    // if inbound liquidity is low, replace invoice with cashu invoice
+    // check if balance is enough to open channel
 
     // if let Some(plugin) = Builder::new(tokio_stdin(), tokio_stdout())
     //     .dynamic()
@@ -51,5 +62,32 @@ async fn main() -> Result<()> {
     //     Ok(())
     // }
 
+    Ok(())
+}
+
+async fn demo(wallet: EcashWallet) -> Result<()> {
+    let balance = wallet.get_total_balance().await?;
+    println!("Total balance: {}", balance);
+    if balance < 3 {
+        let invoice = wallet.create_lightning_invoice(6 - balance).await?;
+        println!("Invoice: {}", &invoice.bolt11);
+        while !wallet.check_invoice_status(&invoice.mint_quote_id).await? {
+            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+        }
+        println!("Invoice paid");
+        println!("Total balance: {}", wallet.get_total_balance().await?);
+    }
+    // read invoice from stdin
+    let entered_lightning_invoice = {
+        let mut input = String::new();
+        println!("Enter lightning invoice: ");
+        let mut stdin = tokio::io::BufReader::new(tokio_stdin());
+        stdin.read_line(&mut input).await?;
+        input.trim().to_string()
+    };
+    let payment_preimage = wallet
+        .pay_lightning_invoice(entered_lightning_invoice)
+        .await?;
+    println!("Payment preimage: {}", payment_preimage);
     Ok(())
 }

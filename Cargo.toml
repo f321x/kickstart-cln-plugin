@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0.89"
 cdk = "0.4.0"
+cdk-redb = "0.4.0"
 cdk-sqlite = "0.4.0"
 cln-plugin = "0.2.0"
 dotenvy = "0.15.7"
