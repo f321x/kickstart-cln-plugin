@@ -28,7 +28,7 @@ async fn main() -> Result<()> {
     // run demo
     // demo(wallet).await?;
 
-    // catch created invoice // hook
+    // catch created invoice // hook @ lightning-invoice
     // check inbound liquidity // lightning-listchannels RPC
     // if inbound liquidity is low, replace invoice with cashu invoice
     // check if balance is enough to open channel
