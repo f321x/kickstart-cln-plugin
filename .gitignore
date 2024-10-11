@@ -1,3 +1,4 @@
 /target
 cashu_wallet.db
 .env
+/docker-dev-env/plugin-binaries/*
