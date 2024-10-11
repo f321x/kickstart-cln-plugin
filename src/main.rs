@@ -1,21 +1,27 @@
 mod cln_liquidity_plugin;
 mod ecash_wallet;
 
-use anyhow::{anyhow, Result};
-use cdk::*;
-use cln_plugin::Builder;
+use anyhow::{anyhow, Error, Result};
+use cdk::{
+    amount::{Amount, SplitTarget},
+    nuts::{CurrencyUnit, MeltQuoteState},
+    wallet::Wallet,
+};
+use cln_liquidity_plugin::rpc_command_handler;
+use cln_plugin::{Builder, Plugin};
 use dotenvy::dotenv;
 use ecash_wallet::EcashWallet;
 use env_logger::Target;
 #[allow(unused_imports)]
 use log::{debug, error, info, trace, warn};
 use rand::Rng;
+use serde_json::json;
 use std::{env, fs::OpenOptions, io::Write, path::Path, sync::Arc};
 use tokio::io::{stdin as tokio_stdin, stdout as tokio_stdout, AsyncBufReadExt};
 
 // disclaimer: started hacking on this on Thursday (and some research before)
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() -> anyhow::Result<()> {
     // enable logging to stderr (stdout is used for plugin communication)
     env_logger::builder()
         .filter_level(log::LevelFilter::Warn)
@@ -27,28 +33,28 @@ async fn main() -> Result<()> {
     // initialize ecash wallet
     let wallet = EcashWallet::new().await?;
 
-    // run demo
+    // run ecash wallet demo
     // _demo(wallet).await?;
 
     // catch created invoice // hook @ lightning-invoice
     // check inbound liquidity // lightning-listchannels RPC
     // if inbound liquidity is low, replace invoice with cashu invoice
     // check if balance is enough to open channel
+    trace!("Starting cln plugin...");
+    let state = ();
+    if let Some(plugin) = Builder::new(tokio_stdin(), tokio_stdout())
+        // .option(TEST_OPTION)  // used to accept cli input from user to plugin
+        // .notification(messages::NotificationTopic::new(TEST_NOTIF_TAG))
+        .hook("rpc_command", rpc_command_handler)
+        .with_logging(false)
+        .start(state)
+        .await?
+    {
+        info!("Plugin initiated successfully, running...");
+        plugin.join().await?;
+    }
 
-    // if let Some(plugin) = Builder::new(tokio_stdin(), tokio_stdout())
-    //     // .option(TEST_OPTION)  // used to accept cli input from user to plugin
-    //     .subscribe("connect", connect_handler)
-    //     .subscribe("test_custom_notification", test_receive_custom_notification)
-    //     .hook("rpc_command", peer_connected_handler)
-    //     .notification(messages::NotificationTopic::new(TEST_NOTIF_TAG))
-    //     .start(state)
-    //     .await?
-    // {
-    //     plugin.join().await
-    // } else {
-    //     Ok(())
-    // }
-
+    warn!("Plugin exited");
     Ok(())
 }
 

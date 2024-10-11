@@ -21,10 +21,11 @@ impl EcashWallet {
             }
         };
         // let database = cdk_sqlite::WalletSqliteDatabase::new(Path::new("cashu_wallet.db")).await?;
+        // database.migrate().await;
         let database = cdk_redb::WalletRedbDatabase::new(Path::new("cashu_wallet.db"))?;
         let cdk_wallet = Wallet::new(
             &mint_url,
-            nuts::CurrencyUnit::Sat,
+            CurrencyUnit::Sat,
             Arc::new(database),
             &seed,
             None,
@@ -32,7 +33,7 @@ impl EcashWallet {
         let existing_balance = cdk_wallet.total_balance().await?;
         if existing_balance == Amount::from(0) && !newly_generated {
             warn!("Found no balance in database on already existing secret, scanning for existing proofs...");
-            let restored_amount = cdk_wallet.restore().await?;
+            let restored_amount: Amount = cdk_wallet.restore().await?;
             warn!("Restored balance: {}", restored_amount);
         }
         Ok(Self { cdk_wallet })
@@ -46,32 +47,11 @@ impl EcashWallet {
         // get melt quote for invoice
         let melt_quote = self.cdk_wallet.melt_quote(bolt11_invoice, None).await?;
         // pay invoice
-        self.cdk_wallet.melt(&melt_quote.id).await?;
-        let start_time = std::time::Instant::now();
-        loop {
-            // timeout if payment takes longer than expiry
-            if start_time.elapsed().as_secs() > 60 * 5 {
-                return Err(anyhow!(
-                    "Payment timed out, expiry ts is {}",
-                    melt_quote.expiry
-                ));
-            }
-            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-            let status = self.cdk_wallet.melt_quote_status(&melt_quote.id).await?;
-            // match status.payment_preimage {
-            //     Some(preimage) => return Ok(preimage), // why is there no preimage if paid == true?
-            //     None => continue,
-            // }
-            match status.state {
-                nuts::MeltQuoteState::Paid => {
-                    return Ok(status.payment_preimage.unwrap_or("".to_string()));
-                }
-                nuts::MeltQuoteState::Unpaid => {
-                    return Err(anyhow!("Payment expired"));
-                }
-                _ => continue,
-            }
+        let melted = self.cdk_wallet.melt(&melt_quote.id).await?; // blocking till paid
+        if melted.state != MeltQuoteState::Paid {
+            return Err(anyhow!("Invoice not paid, Status: {:?}", melted.state));
         }
+        Ok(melted.preimage.unwrap_or(String::new()))
     }
 
     pub async fn create_lightning_invoice(&self, amount_sat: u64) -> Result<PaymentRequest> {
@@ -94,7 +74,7 @@ impl EcashWallet {
             .unwrap_or(false);
         if status {
             self.cdk_wallet
-                .mint(mint_quote_id, amount::SplitTarget::None, None)
+                .mint(mint_quote_id, SplitTarget::None, None)
                 .await?;
         }
         Ok(status)

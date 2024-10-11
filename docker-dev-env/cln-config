@@ -1,0 +1,6 @@
+bitcoin-rpcconnect=bitcoind
+bitcoin-rpcport=38332
+bitcoin-rpcuser=bitcoin
+bitcoin-rpcpassword=bitcoin
+bitcoin-datadir=/root/.bitcoin
+network=signet
