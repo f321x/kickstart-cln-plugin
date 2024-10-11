@@ -1,4 +1,5 @@
 # ```kickstart-cln``` [Core Lightning](https://github.com/ElementsProject/lightning) Plugin
+<mark>This is a btc++ **hackathon** project. Don't expect production grade quality.</mark>
 
 This plugin intercepts the CLN [```createinvoice```](https://docs.corelightning.org/reference/lightning-createinvoice) RPC command and replaces the invoice with a 
 [cashu ecash](https://cashu.space/) mint invoice in case the inbound [liquidity](https://bitcoin.design/guide/how-it-works/liquidity/) is too low to receive the payment directly.
