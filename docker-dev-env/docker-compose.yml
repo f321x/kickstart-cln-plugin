@@ -19,6 +19,8 @@ services:
       - bitcoin_datadir:/root/.bitcoin
       - ${PWD}/cln-config:/root/.lightning/config
       - ./plugin-binaries:/root/.lightning/plugins
+    environment:
+      - MINT_URL=https://mint.thesimplekid.dev
     networks:
       - dev-net 
     platform: linux/amd64
