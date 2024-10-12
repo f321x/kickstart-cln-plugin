@@ -1,5 +1,6 @@
 mod cln_liquidity_plugin;
 mod ecash_wallet;
+mod lsp_channel_opener;
 
 use anyhow::{anyhow, Error, Result};
 use cdk::{
@@ -18,6 +19,7 @@ use ecash_wallet::{mint_pending_mint_requests, EcashWallet};
 use env_logger::Target;
 #[allow(unused_imports)]
 use log::{debug, error, info, trace, warn};
+use lsp_channel_opener::open_lsp_channel;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -38,6 +40,9 @@ async fn main() -> anyhow::Result<()> {
         .init();
     // load .env file
     dotenv().ok();
+
+    warn!("This is a hackathon project, usage is definitely reckless!");
+
     // initialize ecash wallet
     let wallet = Arc::new(Mutex::new(EcashWallet::new().await?));
     let wallet_clone = wallet.clone();
