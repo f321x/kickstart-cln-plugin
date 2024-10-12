@@ -97,31 +97,56 @@ impl OlympusLspClient {
     }
 }
 
-pub async fn open_lsp_channel() -> Result<()> {
+pub async fn open_lsp_channel(
+    size_sat: u64,
+    public_key: String,
+    ecash_wallet: Arc<Mutex<EcashWallet>>,
+) -> Result<()> {
     let client = OlympusLspClient::new();
 
     // Get info
     let info = client.get_info().await?;
     debug!("Info: {:?}", info);
+    if size_sat < info.min_initial_lsp_balance_sat.parse::<u64>()?
+        || size_sat > info.max_initial_lsp_balance_sat.parse::<u64>()?
+    {
+        return Err(anyhow!("Requested amount not accepted"));
+    }
 
     // Create order
     let create_order_request = CreateOrderRequest {
-        lsp_balance_sat: "10000000".to_string(),
+        lsp_balance_sat: size.to_string(),
         client_balance_sat: "0".to_string(),
-        required_channel_confirmations: 8,
-        funding_confirms_within_blocks: 6,
-        channel_expiry_blocks: 13000,
+        required_channel_confirmations: info.min_required_channel_confirmations,
+        funding_confirms_within_blocks: info.min_funding_confirms_within_blocks,
+        channel_expiry_blocks: info.max_channel_expiry_blocks,
         token: "".to_string(),
         refund_onchain_address: "".to_string(),
-        announce_channel: false,
-        public_key: "025b7a68b4cd85668e65db6a343a4c607a462cdd010daa793f82be561a3316c5b1"
-            .to_string(),
+        announce_channel: true,
+        public_key,
     };
     let create_order_response = client.create_order(create_order_request).await?;
     debug!("Create Order Response: {:?}", create_order_response);
+    if ecash_wallet.lock().await.get_total_balance().await?
+        < create_order_response
+            .payment
+            .bolt11
+            .order_total_sat
+            .parse::<u64>()?
+    {
+        return Err(anyhow!("Insufficient balance"));
+    }
+
+    ecash_wallet
+        .lock()
+        .await
+        .pay_lightning_invoice(create_order_response.payment.bolt11.invoice)
+        .await?;
+    tokio::time::sleep(duration_from_secs(5)).await;
 
     // Get order
     let order_id = &create_order_response.order_id;
     let get_order_response = client.get_order(order_id).await?;
-    debug!("Get Order Response: {:?}", get_order_response);
+    debug!("Get LSP order response: {:?}", get_order_response);
+    Ok(())
 }
