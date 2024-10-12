@@ -1,13 +1,20 @@
+use std::time::Duration;
+
+use cdk::nuts::SpendingConditions;
+
 use super::*;
 
 pub struct EcashWallet {
     cdk_wallet: Wallet,
+    pending_mint_requests: Vec<PaymentRequest>,
 }
 
 #[derive(Debug, Clone)]
 pub struct PaymentRequest {
     pub bolt11: String,
     pub mint_quote_id: String,
+    pub minted: bool,
+    pub expiry: u64,
 }
 
 impl EcashWallet {
@@ -36,7 +43,10 @@ impl EcashWallet {
             let restored_amount: Amount = cdk_wallet.restore().await?;
             warn!("Restored balance: {}", restored_amount);
         }
-        Ok(Self { cdk_wallet })
+        Ok(Self {
+            cdk_wallet,
+            pending_mint_requests: Vec::new(),
+        })
     }
 
     pub async fn get_total_balance(&self) -> Result<u64> {
@@ -54,15 +64,20 @@ impl EcashWallet {
         Ok(melted.preimage.unwrap_or(String::new()))
     }
 
-    pub async fn create_lightning_invoice(&self, amount_sat: u64) -> Result<PaymentRequest> {
+    pub async fn create_lightning_invoice(&mut self, amount_sat: u64) -> Result<PaymentRequest> {
         let mint_quote = self
             .cdk_wallet
             .mint_quote(Amount::from(amount_sat), None)
             .await?;
-        Ok(PaymentRequest {
+        debug!("Mint quote: {:?}", mint_quote);
+        let paymet_request = PaymentRequest {
             bolt11: mint_quote.request.clone(),
-            mint_quote_id: mint_quote.id,
-        })
+            mint_quote_id: mint_quote.id.clone(),
+            expiry: mint_quote.expiry,
+            minted: false,
+        };
+        self.pending_mint_requests.push(paymet_request.clone());
+        Ok(paymet_request)
     }
 
     pub async fn check_invoice_status(&self, mint_quote_id: &str) -> Result<bool> {
@@ -79,6 +94,46 @@ impl EcashWallet {
         }
         Ok(status)
     }
+}
+
+pub async fn mint_pending_mint_requests(wallet: Arc<Mutex<EcashWallet>>) -> Result<()> {
+    loop {
+        if !wallet.lock().await.pending_mint_requests.is_empty() {
+            trace!("Checking pending mint requests...");
+            let mut wallet = wallet.lock().await;
+
+            wallet.pending_mint_requests.retain(|quote| {
+                if quote.expiry < unix_time() {
+                    debug!("Quote expired: {}", quote.mint_quote_id);
+                    false
+                } else {
+                    true
+                }
+            });
+            let mut status_vec: Vec<bool> = Vec::new();
+            for quote in &wallet.pending_mint_requests {
+                status_vec.push(wallet.check_invoice_status(&quote.mint_quote_id).await?);
+            }
+            // remove paid invoices
+            wallet.pending_mint_requests.retain(|quote| {
+                if status_vec.pop().unwrap() {
+                    debug!("Quote paid: {}", quote.mint_quote_id);
+                    false
+                } else {
+                    true
+                }
+            });
+        }
+        tokio::time::sleep(Duration::from_secs(10)).await; // low timeout for demo
+    }
+}
+
+/// Get the current unix time
+fn unix_time() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("Time went backwards")
+        .as_secs()
 }
 
 /// load hex seed from env
