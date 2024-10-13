@@ -20,7 +20,8 @@ services:
       - ${PWD}/cln-config:/root/.lightning/config
       - ./plugin-binaries:/root/.lightning/plugins
     environment:
-      - MINT_URL=https://mint.thesimplekid.dev
+      - MINT_URL=https://mutinynet.nutmix.cash
+      - TARGET_CHANNEL_SIZE_SAT=1000000
     networks:
       - dev-net 
     platform: linux/amd64

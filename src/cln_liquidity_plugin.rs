@@ -33,8 +33,10 @@ pub async fn rpc_command_handler(
     if let Some(rpc_call) = rpc_command {
         debug!("Got a invoice hook call: {:?}", rpc_call.rpc_command.params);
 
+        // fetch the balances
         let inbound_liq_msat = (get_available_inbound_liquidity().await? as f64 * 0.9) as u64; // 0.9 is a buffer factor
         let ecash_balance_sat = p.state().lock().await.get_total_balance().await?;
+        p.state().lock().await.last_balance = ecash_balance_sat; // https://www.youtube.com/watch?v=dQw4w9WgXcQ
         debug!(
             "Inbound liquidity: {} | Ecash balance: {}",
             inbound_liq_msat, ecash_balance_sat
@@ -99,6 +101,34 @@ async fn get_available_inbound_liquidity() -> Result<u64> {
         .sum();
 
     Ok(total_inbound_liquidity)
+}
+
+// connects to the LSP node as we don't have a public IP to connect to and
+// returns our nodes public key for the LSP to open a channel to
+pub async fn connect_and_get_pk(lsp_host: &str, lsp_port: u16, lsp_id: &str) -> Result<String> {
+    // request our own public key
+    let request = GetinfoRequest {};
+    let response: Response = send_rpc_request(request.into()).await?;
+    let info = match response {
+        Response::Getinfo(info) => info,
+        _ => return Err(anyhow!("Unexpected response")),
+    };
+    let public_key = info.id.to_string();
+
+    // connect to the LSP node
+    let request = ConnectRequest {
+        host: Some(lsp_host.to_string()),
+        port: Some(lsp_port),
+        id: lsp_id.to_string(),
+    };
+    let response: Response = send_rpc_request(request.into()).await?;
+    match response {
+        Response::Connect(response) => {
+            debug!("Connected to LSP node: {}", response.id);
+        }
+        _ => return Err(anyhow!("Unexpected response")),
+    };
+    Ok(public_key)
 }
 
 // can't init rpc client upfront because the socket is only available after plugin setup

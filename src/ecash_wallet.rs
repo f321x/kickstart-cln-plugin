@@ -1,19 +1,15 @@
-use std::time::Duration;
-
-use cdk::nuts::SpendingConditions;
-
 use super::*;
 
 pub struct EcashWallet {
     cdk_wallet: Wallet,
     pending_mint_requests: Vec<PaymentRequest>,
+    pub last_balance: u64,
 }
 
 #[derive(Debug, Clone)]
 pub struct PaymentRequest {
     pub bolt11: String,
     pub mint_quote_id: String,
-    pub minted: bool,
     pub expiry: u64,
 }
 
@@ -43,9 +39,11 @@ impl EcashWallet {
             let restored_amount: Amount = cdk_wallet.restore().await?;
             warn!("Restored balance: {}", restored_amount);
         }
+        let balance = cdk_wallet.total_balance().await?;
         Ok(Self {
             cdk_wallet,
             pending_mint_requests: Vec::new(),
+            last_balance: balance.into(),
         })
     }
 
@@ -74,7 +72,6 @@ impl EcashWallet {
             bolt11: mint_quote.request.clone(),
             mint_quote_id: mint_quote.id.clone(),
             expiry: mint_quote.expiry,
-            minted: false,
         };
         self.pending_mint_requests.push(paymet_request.clone());
         Ok(paymet_request)
@@ -123,6 +120,7 @@ pub async fn mint_pending_mint_requests(wallet: Arc<Mutex<EcashWallet>>) -> Resu
                     true
                 }
             });
+            wallet.last_balance = wallet.get_total_balance().await?;
         }
         tokio::time::sleep(Duration::from_secs(10)).await; // low timeout for demo
     }

@@ -5,13 +5,17 @@ mod lsp_channel_opener;
 use anyhow::{anyhow, Error, Result};
 use cdk::{
     amount::{Amount, SplitTarget},
+    error,
     nuts::{CurrencyUnit, MeltQuoteState},
-    wallet::{self, Wallet},
+    wallet::Wallet,
 };
-use cln_liquidity_plugin::rpc_command_handler;
+use cln_liquidity_plugin::{connect_and_get_pk, rpc_command_handler};
 use cln_plugin::{Builder, Plugin};
 use cln_rpc::{
-    model::{requests::ListfundsRequest, Request, Response},
+    model::{
+        requests::{ConnectRequest, GetinfoRequest, ListfundsRequest},
+        Request, Response,
+    },
     ClnRpc,
 };
 use dotenvy::dotenv;
@@ -19,11 +23,14 @@ use ecash_wallet::{mint_pending_mint_requests, EcashWallet};
 use env_logger::Target;
 #[allow(unused_imports)]
 use log::{debug, error, info, trace, warn};
-use lsp_channel_opener::open_lsp_channel;
+use lsp_channel_opener::channel_manager;
+// use lsp_channel_opener::channel_manager;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::{env, fs::OpenOptions, io::Write, path::Path, sync::Arc};
+use std::{
+    env, fs::OpenOptions, io::Write, path::Path, sync::Arc, thread::AccessError, time::Duration,
+};
 use tokio::{
     io::{stdin as tokio_stdin, stdout as tokio_stdout, AsyncBufReadExt},
     sync::Mutex,
@@ -45,8 +52,15 @@ async fn main() -> anyhow::Result<()> {
 
     // initialize ecash wallet
     let wallet = Arc::new(Mutex::new(EcashWallet::new().await?));
-    let wallet_clone = wallet.clone();
-    tokio::task::spawn(async move { mint_pending_mint_requests(wallet_clone).await });
+    let minting_wallet = Arc::clone(&wallet);
+    let channel_manager_wallet = Arc::clone(&wallet);
+    tokio::task::spawn(async move { mint_pending_mint_requests(minting_wallet).await });
+
+    tokio::task::spawn(async move {
+        let err = channel_manager(channel_manager_wallet).await;
+        error!("Channel manager exited: {:?}", err);
+        tokio::time::sleep(Duration::from_secs(60)).await;
+    });
 
     // run ecash wallet demo
     // _demo(&mut *wallet.lock().await).await?;
